@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <!-- Character encoding and page title -->
+        <meta charset="utf-8" />
+        <title>Wide Spots in the Road</title>
+
+        <!-- Mobile-friendly viewport settings -->
+        <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+
+        <!-- Mapbox GL JS library (JavaScript + CSS) -->
+        <script src="https://api.tiles.mapbox.com/mapbox-gl-js/v3.12.0/mapbox-gl.js"></script>
+        <link rel="stylesheet" href="https://api.tiles.mapbox.com/mapbox-gl-js/v3.12.0/mapbox-gl.css" />
+
+        <!-- Fuse.js for fuzzy search -->
+        <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2"></script>
+
+        <!-- Google Fonts performance hints (optional) -->
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+        <!-- Page-level styles -->
+        <style>
+                        /* Base typography + page reset */
+                        body {
+                            margin: 0;
+                            padding: 0;
+                            font-family: "Georgia", "Palatino Linotype", "Book Antiqua", serif;
+                            font-size: 14px;
+                            color: #111;
+                        }
+
+                        /* Map canvas fills entire viewport */
+                        #map {
+                            position: absolute;
+                            top: 0;
+                            bottom: 0;
+                            width: 100%;
+                            height: 100vh;
+                        }
+
+                        /*-----------Pop-up styling---------------*/
+
+                        /* Responsive images inside popups */
+                        .popupImage {
+                            max-width: 250px;
+                            width: 100%;
+                            height: auto;
+                            display: block;
+                            margin: 0 auto;
+                        }
+
+                        /* Popup & overlay typography tweaks */
+                        .mapboxgl-popup-content {
+                            font-family: "Georgia", "Palatino Linotype", "Book Antiqua", serif;
+                            font-size: 11.5px;
+                            color: #111;
+                            line-height: 1.4;
+                        }
+
+                        /* Center name text */
+                        .mapboxgl-popup-content strong {
+                            display: block;
+                            text-align: center;
+                        }
+
+                        /*-----------Infobox styling---------------*/
+
+                        /* Floating info/legend container in top-left */
+                        #infobox {
+                            position: absolute;
+                            top: 10px;
+                            left: 10px;
+                            z-index: 1; /* keeps on top of map */
+                            font-family: "Georgia", "Palatino Linotype", "Book Antiqua", serif;
+                            color: #111;
+                        }
+
+                        /* Individual boxes inside the overlay */
+                        #infobox > div {
+                            background: rgba(255, 255, 255, 0.45);
+                            padding: 6px 10px;
+                            margin-bottom: 8px;
+                            border-radius: 3px;
+                            font-size: 11.5px;
+                            line-height: 1.3;
+                            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+                            max-width: 400px;
+                        }
+
+                        /* Floating infobox styling */
+                        .floating-popup {
+                            position: absolute;
+                            top: 262px; /* adjust to place it below the infobox */
+                            left: 190px; /* adjust away from infobox */
+                            background: rgba(255, 255, 255, 0.45);
+                            border-radius: 3px;
+                            padding: 6px 10px;
+                            font-family: "Georgia", "Palatino Linotype", "Book Antiqua", serif;
+                            font-size: 11.5px;
+                            line-height: 1.3;
+                            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+                            max-width: 220px;
+                            pointer-events: none;
+                            z-index: 2;
+                        }
+                        .floating-popup * {
+                            pointer-events: auto; /* re-enable interaction for content inside */
+                        }
+
+                        .close-btn {
+                            position: absolute;
+                            top: 4px;
+                            right: 6px;
+                            background: none;
+                            border: none;
+                            font-size: 14px;
+                            font-weight: bold;
+                            color: #333;
+                            cursor: pointer;
+                        }
+
+                        /*-------------------Title styling-------------*/
+                        /* Title styles */
+                        #title h1 {
+                            font-size: 13px;
+                            margin: 0;
+                            font-weight: bold;
+                        }
+                        #title h2 {
+                            font-size: 11px;
+                            margin: 2px 0 0;
+                            font-weight: normal;
+                        }
+
+                        /*-------------------Searchbox styling-------------*/
+                        #searchbox-container {
+                            max-width: 400px;
+                        }
+                        .searchbox-row {
+                            display: flex;
+                            align-items: center;
+                            justify-content: space-between;
+                            max-width: 400px;
+                            gap: 8px;
+                        }
+
+                        .search-label {
+                            font-size: 11.5px;
+                            white-space: nowrap;
+                        }
+
+                        #searchBox {
+                            flex-grow: 1;
+                        }
+                        #searchResults {
+                            margin-top: 6px;
+                            padding-left: 20px;
+                            font-size: 11.5px;
+                            list-style: disc;
+                            max-width: 400px;
+                        }
+
+                        #searchResults li {
+                            cursor: pointer;
+                            margin-bottom: 4px;
+                        }
+
+                        /*-------------------Legend styling-------------*/
+                        /* Legend layout */
+                        #legend {
+                            width: 150px;
+                        }
+                        #legend h3 {
+                            margin: 0 0 6px;
+                            font-size: 12px;
+                            font-weight: bold;
+                        }
+                        #legend ul {
+                            list-style: none;
+                            margin: 0;
+                            padding: 0;
+                        }
+                        #legend li {
+                            display: flex;
+                            align-items: center;
+                            margin-bottom: 4px;
+                        }
+                        #legend img {
+                            width: 18px;
+                            height: 18px;
+                            margin-right: 6px;
+                        }
+
+                        /* Allow the markers underneath textboxes to be clickable */
+
+                        #infobox {
+                            pointer-events: none;
+                        }
+
+                        #infobox a,
+                        #infobox button,
+                        #infobox input,
+                        #infobox label,
+                        #infobox select,
+                        #infobox li {
+                            pointer-events: auto;
+                        }
+
+                        /* Reset button style */
+                        #resetBtn {
+                        position: absolute;
+                        bottom: 75px;
+                        right: 20px;
+                        background-color: green;
+                        color: white;
+                        padding: 8px 12px;
+                        font-size: 14px;
+                        border: none;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        z-index: 999;
+                    }
+
+            /* Style for the timeline slider infobox */
+            #timelineSlider {
+                position: absolute;
+                bottom: 45px;
+                left: 200px;
+                right: 115px; /* Adjust right side to make room for other elements */
+                background: rgba(255, 255, 255, 0.45); /* Semi-transparent background */
+                padding: 4px 10px; /* Padding around the slider */
+                border-radius: 3px; /* Rounded corners */
+                font-size: 10px; /* Adjust font size */
+                line-height: 1.2; /* Line height for readability */
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2); /* Soft shadow */
+                pointer-events: auto; /* Allow interactions with slider */
+                z-index: 999; /* Ensure it's above the map */
+            }
+
+            /* Style for the slider input element */
+            #timeSlider {
+                width: 100%; /* Full width to cover the infobox */
+                height: 16px;
+                -webkit-appearance: none; /* Remove default styles */
+                background: #ddd; /* Color for the track */
+                border-radius: 5px;
+            }
+
+            /* Style for the slider value text */
+            #slider-value {
+                font-size: 12px; /* Font size for the slider value */
+                color: #111; /* Text color */
+                padding-left: 8px;
+            }
+
+             #timelineSlider h3 {
+                font-size: 14px;
+                font-weight: bold;
+                margin-bottom: 10px;
+            }
+
+            #yearSlider {
+                width: 100%;
+                height: 20px;
+                -webkit-appearance: none; /* Remove default styles on WebKit browsers */
+                background: #ddd; /* Color for track */
+                border-radius: 5px;
+            }
+
+            /* For Webkit browsers */
+            input[type="range"]::-webkit-slider-thumb {
+                -webkit-appearance: none;
+                appearance: none;
+                width: 15px;
+                height: 15px;
+                border-radius: 50%;
+                background: green; /* Ensure the thumb is green */
+                cursor: pointer;
+            }
+
+            /* For Firefox */
+            input[type="range"]::-moz-range-thumb {
+                width: 15px;
+                height: 15px;
+                border-radius: 50%;
+                background: green; /* Ensure the thumb is green */
+                cursor: pointer;
+            }
+            /* Style for the "Year Founded" label */
+            #yearFoundedLabel {
+                font-size: 12px; /* Make it a bit smaller */
+                font-weight: bold; /* Keep it bold */
+            }
+
+            /* Style for the slider instructions */
+            #sliderInstructions {
+                font-size: 12px; /* Same font size as the label but not bold */
+                font-weight: normal; /* Remove bold */
+                display: inline; /* Make it appear on the same line as the label */
+                margin-left: 10px; /* Add a little space between label and instructions */
+            }
+            
+        </style>
+    </head>
+
+    <body>
+        <!-- Map container (Mapbox GL will render into this div) -->
+        <div id="map"></div>
+
+        <!-- Informational overlay: title, description-->
+        <div id="infobox">
+            <div id="title">
+                <h1>Wide Spots in the Road: A Tour of Forgotten Oregon Towns</h1>
+                <h2>By: <a href="#" id="bioLink">Kathleen Ehli</a></h2>
+            </div>
+            <div id="description">
+                <p>
+                    This map highlights small Oregon towns and former towns, grouped by the economic or historical context for their existence. <strong>Click a marker</strong> to see archival images and learn more.
+                    <strong>Hover</strong> over an image to see its caption. Each town links to a <a href="#" id="wikiInfoLink">Wikipedia</a> article I created or expanded, part of an ongoing effort to surface local histories and rescue
+                    overlooked places from obscurity.<br />
+                    <br />
+                    <a id="wikiNavLink" href="#" style="display: block; text-align: right; font-size: smaller;">Navigating Wikipedia</a>
+                </p>
+            </div>
+
+            <!--Search box-->
+            <div id="searchbox-container">
+                <div class="searchbox-row">
+                    <span class="search-label">Search for county name or founding year:</span>
+                    <input type="text" id="searchBox" placeholder="Search towns..." />
+                </div>
+                <ul id="searchResults"></ul>
+            </div>
+
+            <!--Legend-->
+            <div id="legend"></div>
+
+            <!--Floating popups-->
+            <div id="bioPopup" class="floating-popup" style="display: none;">
+                <button class="close-btn" onclick="this.parentElement.style.display='none';">×</button>
+                <strong>About the Author</strong><br />
+                <br />
+                Kathleen Ehli is a geography student at the UO with a background in the humanities, specializing in GIS and the historical geography of Oregon.
+            </div>
+            <div id="wikiInfoPopup" class="floating-popup" style="display: none;">
+                <button class="close-btn" onclick="this.parentElement.style.display='none';">×</button>
+                <strong>About Wikipedia</strong><br />
+                <br />
+                Wikipedia is a free, collaboratively edited online encyclopedia supported by the Wikimedia Foundation. It allows anyone to contribute or edit articles.
+            </div>
+            <div id="wikiNavPopup" class="floating-popup" style="display: none;">
+                <button class="close-btn" onclick="this.parentElement.style.display='none';">×</button>
+                <strong>Navigating Wikipedia</strong><br />
+                <br />
+                <strong>More Maps!</strong> In the upper right corner of the Wikipedia article, click on the coordinates to access a variety of maps.<br />
+                <br />
+                <strong>More Images!</strong> At the bottom of the Wikipedia article, look for links to more photos and related content.
+            </div>
+        </div>
+
+        <!-- Timeline Slider Infobox -->
+        <div id="timelineSlider" class="timeline-slider">
+            <h3><span id="yearFoundedLabel">Year Founded:</span> <span id="sliderInstructions">This slider allows you to filter towns based on their founding year. Move the slider to watch the towns appear and disappear.</span></h3>
+            <input type="range" id="timeSlider" min="1850" max="1920" value="1920" step="1" style="width: 100%;" />
+            <!-- The actual slider -->
+            <span id="slider-value" style="font-size: 14px; color: #111;">1920</span>
+            <!-- Display the current year value -->
+        </div>
+
+        <!--Reset button-->
+        <div id="resetBtn">Reset Map</div>
+
+        <!-- Main mapping script -->
+        <script>
+            // Provide Mapbox access token
+            mapboxgl.accessToken = "pk.eyJ1IjoidmFsZm9udGlzIiwiYSI6ImNtOTF4bDQ4dDA2N3Yyc3B5ZHhyZTVxYXMifQ.HTxXN1ZbkodsmGrMAFUYeA";
+
+            // Initialize the Map object
+            const map = new mapboxgl.Map({
+                container: "map", // DOM element id to render into
+                style: "mapbox://styles/mapbox/outdoors-v12", // base map style
+                center: [-120.6, 44.15], // Centering Oregon with all boundaries visible (in my browser anyway)
+                zoom: 6.75, // Initial zoom level
+                minZoom: 6, // User can't zoom out past here
+                maxZoom: 15, // User can't zoom in past here
+            });
+
+            // Add navigation control (zoom in/out buttons, no compass)
+            map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-right");
+
+            // Track the popup that is currently open
+            let currentPopup = null;
+
+            // Hard bounds: keep user inside Oregon region (drag constraint)
+            const OR_BOUNDS = [
+                [-125.0, 41.9], // southwest corner
+                [-116.5, 46.4], // northeast corner
+            ];
+
+            // soft bounce if the user lets go outside OR_BOUNDS
+            map.on("dragend", () => {
+                const c = map.getCenter();
+                if (c.lng < OR_BOUNDS[0][0] || c.lng > OR_BOUNDS[1][0] || c.lat < OR_BOUNDS[0][1] || c.lat > OR_BOUNDS[1][1]) {
+                    map.easeTo({
+                        center: [-120.6, 44.15], // middle of Oregon
+                        duration: 600, // ms, tweak for “gentleness”
+                        easing: (t) => 1 - Math.pow(1 - t, 3), // smooth cubic ease-out
+                    });
+                }
+            });
+
+            // Load event fires once base style is ready
+            map.on("load", () => {
+                // List of custom marker icons to register
+                const icons = [
+                    ["Mining-icon", "Mining.png"],
+                    ["Lumber-icon", "Lumber.png"],
+                    ["Railroad-icon", "Railroad.png"],
+                    ["Construction-icon", "Construction.png"],
+                    ["Crossroads-icon", "Crossroads.png"],
+                    ["Agriculture-icon", "Agriculture.png"],
+                    ["Fishing-icon", "Fishing.png"],
+                ];
+
+                // Reset map to initial bounds if Reset Map button is pressed
+                document.getElementById("resetBtn").addEventListener("click", () => {
+                    if (currentPopup) {
+                        currentPopup.remove();
+                        currentPopup = null;
+                    }
+
+                    // Hide shared floating popup box
+                    document.getElementById("floatingPopup").style.display = "none";
+
+                    // Clear searchbox
+                    document.getElementById("searchBox").value = "";
+                    document.getElementById("searchResults").innerHTML = "";
+
+                    // Reset map view
+                    map.flyTo({
+                        center: [-120.6, 44.15], // Original center
+                        zoom: 6.75, // Original zoom
+                        speed: 0.8, // optional: adjust fly speed
+                        curve: 1.42, // optional: adjust fly curve
+                    });
+
+                    // Reset the slider to its initial value (e.g., 1920)
+                    timeSlider.value = 1920;
+                    sliderValue.textContent = timeSlider.value;
+
+                    // Reset the filter to show all data
+                    map.setFilter("places", null); // Remove any existing filter on the "places" layer
+                });
+
+                // Counter to track how many icons have loaded
+                let loadedCount = 0; // helper to know when all images are processed
+
+                // Pre-load each PNG and register with the style
+                icons.forEach(([name, path]) => {
+                    map.loadImage(path, (error, image) => {
+                        if (error) throw error;
+                        map.addImage(name, image);
+                        loadedCount++;
+
+                        // When all icons are ready, proceed to add data + layer
+                        if (loadedCount === icons.length) {
+                            // Add GeoJSON source with point features for towns
+                            map.addSource("places", {
+                                type: "geojson",
+                                data: "wide_spots.geojson", // external file with coordinates + properties
+                            });
+
+                            // Symbol layer uses custom icons + labels
+                            map.addLayer({
+                                id: "places",
+                                type: "symbol",
+                                source: "places",
+                                layout: {
+                                    // Choose icon based on each feature's "category" property
+                                    "icon-image": ["concat", ["get", "category"], "-icon"],
+                                    "icon-size": 1,
+
+                                    // Add text label of the town name
+                                    "text-field": ["get", "name"],
+                                    "text-font": ["Open Sans Regular", "Arial Unicode MS Regular"],
+                                    "text-size": 13,
+
+                                    // Offset/anchor tweaks for overlapping labels
+                                    "text-offset": ["case", ["==", ["get", "name"], "Black Rock"], [0, 1.5], ["==", ["get", "name"], "Copperfield"], [0, 1.5], ["==", ["get", "name"], "Nonpareil"], [0, 1.5], [0, 1.5]],
+                                    "text-anchor": ["case", ["==", ["get", "name"], "Black Rock"], "top-left", ["==", ["get", "name"], "Copperfield"], "top-left", ["==", ["get", "name"], "Nonpareil"], "top-left", "top"],
+
+                                    // Prevent collision hiding
+                                    "text-allow-overlap": true,
+                                    "icon-allow-overlap": true,
+                                },
+                                // Style for the text labels: font color, halo color, and halo effect
+                                paint: {
+                                    "text-color": "#111",
+                                    "text-halo-color": "#b4d79e",
+                                    "text-halo-width": 1,
+                                    "text-halo-blur": 0.5,
+                                },
+                            });
+
+                            // Click handler to open popup with HTML from feature property
+                            map.on("click", "places", (e) => {
+                                const coordinates = e.features[0].geometry.coordinates.slice();
+
+                                const props = e.features[0].properties;
+
+                                // Split popup into top (before image) and bottom (image + attribution)
+                                const [preImage, rest] = props.popup.split("<br><img");
+
+                                const description = `
+                                    ${preImage}<br>
+                                    County: ${props.county}<br>
+                                    Founded: ${props.founded}<br><img${rest ?? ""}
+                                    `;
+
+                                map.easeTo({ center: coordinates, offset: [0, -100], duration: 500 });
+
+                                if (currentPopup) currentPopup.remove();
+
+                                currentPopup = new mapboxgl.Popup().setLngLat(coordinates).setHTML(description).addTo(map);
+                            });
+                                                                            
+                            // Bio popup
+                            document.getElementById("bioLink").addEventListener("click", (e) => {
+                                e.preventDefault();
+                                const popup = document.getElementById("floatingPopup");
+                                popup.innerHTML = document.getElementById("bioPopup").innerHTML;
+                                popup.style.display = "block";
+                            });
+
+                            // Wiki info popup
+                            document.getElementById("wikiInfoLink").addEventListener("click", (e) => {
+                                e.preventDefault();
+                                const popup = document.getElementById("floatingPopup");
+                                popup.innerHTML = document.getElementById("wikiInfoPopup").innerHTML;
+                                popup.style.display = "block";
+                            });
+
+                            // Wiki navigation popup
+                            document.getElementById("wikiNavLink").addEventListener("click", (e) => {
+                                e.preventDefault();
+                                const popup = document.getElementById("floatingPopup");
+                                popup.innerHTML = document.getElementById("wikiNavPopup").innerHTML;
+                                popup.style.display = "block";
+                            });
+                            
+                            // Close popup upon click elsewhere
+                            document.addEventListener("click", (e) => {
+                                const floatingPopup = document.getElementById("floatingPopup");
+
+                                // Don't close if the click was on a link that opens a popup
+                                const triggerIds = ["wikiInfoLink", "wikiNavLink", "bioLink"];
+                                if (triggerIds.includes(e.target.id) || floatingPopup.contains(e.target)) {
+                                    return;
+                                }
+
+                                // Otherwise, close the popup
+                                floatingPopup.style.display = "none";
+                            });
+                            // Pointer cursor feedback
+                            map.on("mouseenter", "places", () => (map.getCanvas().style.cursor = "pointer"));
+                            map.on("mouseleave", "places", () => (map.getCanvas().style.cursor = ""));
+
+                            // Fetch GeoJSON again to build legend and search index
+                            fetch("wide_spots.geojson")
+                                .then((response) => response.json())
+                                .then((data) => {
+                                    // Fuse.js search setup
+                                    const legendContainer = document.getElementById("legend");
+
+                                    // Fuse.js search
+                                    const fuse = new Fuse(data.features, {
+                                        keys: ["properties.name", "properties.category", "properties.county", "properties.founded"],
+                                        threshold: 0.0,
+                                        useExtendedSearch: true,
+                                    });
+
+                                    const searchBox = document.getElementById("searchBox");
+                                    const resultsContainer = document.getElementById("searchResults");
+
+                                    searchBox.addEventListener("input", (e) => {
+                                        const q = e.target.value.trim();
+                                        resultsContainer.innerHTML = "";
+                                        if (q === "") return;
+
+                                        fuse.search(`=${q}`)
+                                            .slice(0, 6)
+                                            .forEach((res) => {
+                                                const li = document.createElement("li");
+                                                li.textContent = res.item.properties.name;
+                                                li.style.cursor = "pointer";
+
+                                                li.addEventListener("click", () => {
+                                                    const coords = res.item.geometry.coordinates;
+
+                                                    map.flyTo({ center: coords, zoom: 10, speed: 0.8, curve: 1.5 });
+
+                                                    map.once("moveend", () => {
+                                                        if (currentPopup) currentPopup.remove();
+
+                                                        const p = res.item.properties;
+                                                        const [preImg, rest] = p.popup.split("<br><img");
+
+                                                        const html = `
+                                              ${preImg}<br>
+                                              County: ${p.county}<br>
+                                              Founded: ${p.founded}<br><img${rest ?? ""}
+                                            `;
+
+                                                        currentPopup = new mapboxgl.Popup().setLngLat(coords).setHTML(html).addTo(map);
+                                                    });
+                                                });
+
+                                                resultsContainer.appendChild(li);
+                                            });
+                                    });
+                                    // End Fuse.js block
+
+                                    // Auto-clear search results when clicking outside search UI
+                                    document.addEventListener("click", (e) => {
+                                        const searchContainer = document.getElementById("searchbox-container");
+                                        if (!searchContainer.contains(e.target)) {
+                                            document.getElementById("searchBox").value = "";
+                                            document.getElementById("searchResults").innerHTML = "";
+                                        }
+                                    });
+
+                                    // Clear existing legend content
+                                    legendContainer.innerHTML = "<h3>Original Industry</h3>";
+
+                                    // Group features by category
+                                    const grouped = {};
+                                    for (const feature of data.features) {
+                                        const cat = feature.properties.category;
+                                        if (!grouped[cat]) grouped[cat] = [];
+                                        grouped[cat].push(feature);
+                                    }
+
+                                    // Sort each group alphabetically by name
+                                    for (const cat in grouped) {
+                                        grouped[cat].sort((a, b) => a.properties.name.localeCompare(b.properties.name));
+                                    }
+
+                                    // Display legend groups sorted alphabetically by industry
+                                    for (const cat of Object.keys(grouped).sort()) {
+                                        const groupBox = document.createElement("div");
+                                        const icon = document.createElement("img");
+                                        icon.src = `${cat}.png`;
+                                        icon.alt = `${cat} icon`;
+                                        icon.style.width = "18px";
+                                        icon.style.height = "18px";
+                                        icon.style.verticalAlign = "middle";
+                                        icon.style.marginRight = "6px";
+
+                                        const label = document.createElement("span");
+                                        label.textContent = cat;
+                                        label.style.fontWeight = "bold";
+
+                                        const header = document.createElement("div");
+                                        header.appendChild(icon);
+                                        header.appendChild(label);
+
+                                        const ul = document.createElement("ul");
+                                        ul.style.listStyle = "none";
+                                        ul.style.paddingLeft = "24px";
+
+                                        for (const feature of grouped[cat]) {
+                                            const li = document.createElement("li");
+                                            const link = document.createElement("a");
+                                            link.href = "#";
+                                            link.textContent = feature.properties.name;
+                                            link.style.textDecoration = "none";
+                                            link.style.color = "#111";
+                                            link.style.fontSize = "11.5px";
+
+                                            // Zoom on click
+                                            link.addEventListener("click", (e) => {
+                                                e.preventDefault();
+
+                                                map.flyTo({
+                                                    center: feature.geometry.coordinates,
+                                                    zoom: 10,
+                                                    speed: 0.8,
+                                                    curve: 1.5,
+                                                    essential: true,
+                                                });
+
+                                                map.once("moveend", () => {
+                                                    // Close the existing popup, if any
+                                                    if (currentPopup) {
+                                                        currentPopup.remove();
+                                                    }
+
+                                                    // Create a new popup and assign it to currentPopup
+                                                    const p = feature.properties;
+                                                    let html;
+
+                                                    if (p.popup && p.popup.includes("<img")) {
+                                                        const [preImg, rest] = p.popup.split("<br><img");
+                                                        html = `
+                                                        ${preImg}<br>
+                                                        County: ${p.county}<br>
+                                                        Founded: ${p.founded}<br><img${rest ?? ""}
+                                                        `;
+                                                    } else {
+                                                        html = `
+                                                        <strong>${p.name}</strong><br>
+                                                        County: ${p.county}<br>
+                                                        Founded: ${p.founded}
+                                                        `;
+                                                    }
+
+                                                    currentPopup = new mapboxgl.Popup().setLngLat(feature.geometry.coordinates).setHTML(html).addTo(map);
+                                                });
+                                            });
+                                            li.appendChild(link);
+                                            ul.appendChild(li);
+                                        }
+
+                                        groupBox.appendChild(header);
+                                        groupBox.appendChild(ul);
+                                        legendContainer.appendChild(groupBox);
+                                    }
+                                });
+                        }
+                    });
+                });
+            });
+            // Time Slider Event Listener
+            const timeSlider = document.getElementById("timeSlider");
+            const sliderValue = document.getElementById("slider-value");
+
+            // Update slider value text
+            timeSlider.addEventListener("input", function () {
+                const selectedYear = timeSlider.value;
+                sliderValue.textContent = selectedYear;
+
+                // Filter data based on the year
+                filterDataByYear(selectedYear);
+            });
+
+            // Filter data based on the selected year
+            function filterDataByYear(year) {
+                // Apply a filter to the "places" source using the 'founded' attribute
+                map.setFilter("places", ["<=", ["get", "founded"], parseInt(year)]);
+            }
+        </script>
+        <!-- Floating popup container for Wikipedia info/navigation -->
+        <div id="floatingPopup" class="floating-popup" style="display: none;"></div>
+    </body>
+</html>
